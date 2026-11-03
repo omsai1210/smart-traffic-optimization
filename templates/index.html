@@ -1,0 +1,314 @@
+<!-- templates/index.html -->
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0">
+
+    <title>
+        Smart Traffic Optimizer
+    </title>
+
+    <!-- LEAFLET -->
+    <link rel="stylesheet"
+        href="https://unpkg.com/leaflet/dist/leaflet.css" />
+
+    <!-- CUSTOM CSS -->
+    <link rel="stylesheet"
+        href="/static/style.css" />
+
+</head>
+
+<body>
+
+    <!-- ================= LEFT PANEL ================= -->
+
+    <div id="sidebar">
+
+        <h2>
+            🚦 Smart Traffic Optimizer
+        </h2>
+
+        <p class="subtitle">
+            Hadapsar, Pune
+        </p>
+
+        <!-- SOURCE -->
+        <div class="control-group">
+
+            <label>
+                Source
+            </label>
+
+            <select id="source">
+
+                <option value="Magarpatta_Junction">
+                    Magarpatta
+                </option>
+
+                <option value="Gadital_Chowk">
+                    Gadital
+                </option>
+
+                <option value="FatimaNagar_Junction">
+                    Fatima Nagar
+                </option>
+
+                <option value="Hadapsar_Main">
+                    Hadapsar
+                </option>
+
+                <option value="Amanora_Entry">
+                    Amanora
+                </option>
+
+            </select>
+
+        </div>
+
+        <!-- DESTINATION -->
+        <div class="control-group">
+
+            <label>
+                Destination
+            </label>
+
+            <select id="dest">
+
+                <option value="Gadital_Chowk">
+                    Gadital
+                </option>
+
+                <option value="FatimaNagar_Junction">
+                    Fatima Nagar
+                </option>
+
+                <option value="Hadapsar_Main">
+                    Hadapsar
+                </option>
+
+                <option value="Magarpatta_Junction">
+                    Magarpatta
+                </option>
+
+                <option value="Amanora_Entry">
+                    Amanora
+                </option>
+
+            </select>
+
+        </div>
+
+        <!-- BUTTONS -->
+        <div class="button-group">
+
+            <button id="loadBtn"
+                onclick="loadRoute()">
+
+                Load Route
+            </button>
+
+            <button id="simulateBtn"
+                onclick="startSimulation()"
+                disabled>
+
+                Start Simulation
+            </button>
+
+        </div>
+
+        <!-- ROUTE INFO -->
+        <div id="routeInfo"
+            class="info-box"
+            style="display:none;">
+
+            <h3>
+                📍 Route Path
+            </h3>
+
+            <p id="routePath"></p>
+
+        </div>
+
+        <!-- LEGEND -->
+        <div class="info-box">
+
+            <h3>
+                🚥 Traffic Legend
+            </h3>
+
+            <div class="legend-item">
+
+                <span class="legend-dot green"></span>
+
+                Smooth Traffic
+
+            </div>
+
+            <div class="legend-item">
+
+                <span class="legend-dot yellow"></span>
+
+                Moderate Traffic
+
+            </div>
+
+            <div class="legend-item">
+
+                <span class="legend-dot red"></span>
+
+                Heavy Congestion
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- ================= MAP ================= -->
+
+    <div id="map"></div>
+
+    <!-- ================= RIGHT PANEL ================= -->
+
+    <div id="stats">
+
+        <h2>
+            📊 Traffic Analytics
+        </h2>
+
+        <!-- MODE -->
+        <div class="mode-switch">
+
+            <button id="dynamicBtn"
+                class="active-mode"
+                onclick="setMode('dynamic')">
+
+                Dynamic
+
+            </button>
+
+            <button id="fixedBtn"
+                onclick="setMode('fixed')">
+
+                Fixed
+
+            </button>
+
+        </div>
+
+        <!-- METRICS -->
+        <div class="stat-box">
+
+            <span>
+                ETA
+            </span>
+
+            <b id="eta">-</b>
+
+        </div>
+
+        <div class="stat-box">
+
+            <span>
+                Time Saved
+            </span>
+
+            <b id="saved">-</b>
+
+        </div>
+
+        <div class="stat-box">
+
+            <span>
+                Efficiency
+            </span>
+
+            <b id="efficiency">-</b>
+
+        </div>
+
+        <div class="stat-box">
+
+            <span>
+                Signals
+            </span>
+
+            <b id="signalsCount">-</b>
+
+        </div>
+
+        <div class="stat-box">
+
+            <span>
+                Congestion
+            </span>
+
+            <b id="congestionIndex">-</b>
+
+        </div>
+
+        <!-- LIVE FEED -->
+        <h3 class="section-title">
+
+            📡 Live Traffic Feed
+
+        </h3>
+
+        <div id="trafficFeed">
+
+            <div class="feed-item low">
+
+                Waiting for route...
+
+            </div>
+
+        </div>
+
+        <!-- GREEDY -->
+        <h3 class="section-title">
+
+            🧠 Greedy Decisions
+
+        </h3>
+
+        <div id="greedyFeed">
+
+            <div class="feed-item medium">
+
+                Waiting for optimization...
+
+            </div>
+
+        </div>
+
+        <!-- STATUS -->
+        <h3 class="section-title">
+
+            🟢 Status
+
+        </h3>
+
+        <div id="statusBox"
+            class="status-box">
+
+            Ready
+
+        </div>
+
+    </div>
+
+    <!-- ================= SCRIPTS ================= -->
+
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+    <script src="/static/script.js"></script>
+
+</body>
+
+</html>
