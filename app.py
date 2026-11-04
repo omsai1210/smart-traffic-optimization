@@ -107,12 +107,17 @@ def route():
 
             }), 400
 
-        # ================= DIJKSTRA =================
+        # ================= TRAFFIC SIMULATION =================
+
+        traffic = generate_traffic(G)
+
+        # ================= TRAFFIC-AWARE DIJKSTRA =================
 
         path = shortest_path(
             G,
             source,
-            destination
+            destination,
+            traffic=traffic
         )
 
         if not path:
@@ -187,10 +192,6 @@ def route():
 
             for coord in coordinates
         ]
-
-        # ================= TRAFFIC =================
-
-        traffic = generate_traffic(G)
 
         # ================= SIGNALS =================
 

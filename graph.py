@@ -146,10 +146,50 @@ def create_graph():
             source,
             destination,
 
-            weight=weight
+            weight=weight,
+            base_weight=weight
         )
 
     return G
+
+# =====================================================
+# DYNAMIC TRAFFIC WEIGHT CALCULATION
+# =====================================================
+
+def calculate_dynamic_cost(base_weight, congestion):
+
+    """
+    Combines base road travel cost with quadratic congestion penalty:
+    dynamic_cost = base_weight * (1 + 0.15 * congestion^2)
+    """
+
+    return round(
+        base_weight * (1 + 0.15 * (congestion ** 2)),
+        2
+    )
+
+def apply_dynamic_weights(G, traffic):
+
+    """
+    Updates graph edge weights dynamically based on simulated traffic density.
+    Higher congestion significantly increases the traversal cost.
+    """
+
+    for u, v, data in G.edges(data=True):
+
+        base_weight = data.get("base_weight", data.get("weight", 1))
+
+        # Check edge representation in traffic dictionary
+        congestion = traffic.get(
+            (u, v),
+            traffic.get((v, u), 1)
+        )
+
+        dyn_cost = calculate_dynamic_cost(base_weight, congestion)
+
+        G[u][v]["weight"] = dyn_cost
+        G[u][v]["dynamic_weight"] = dyn_cost
+        G[u][v]["congestion"] = congestion
 
 # =====================================================
 # DIJKSTRA SHORTEST PATH
@@ -158,10 +198,20 @@ def create_graph():
 def shortest_path(
     G,
     source,
-    destination
+    destination,
+    traffic=None
 ):
 
     try:
+
+        if traffic is not None:
+
+            apply_dynamic_weights(G, traffic)
+            weight_attr = 'dynamic_weight'
+
+        else:
+
+            weight_attr = 'weight'
 
         path = nx.shortest_path(
 
@@ -171,7 +221,7 @@ def shortest_path(
 
             target=destination,
 
-            weight='weight'
+            weight=weight_attr
         )
 
         return path
@@ -194,7 +244,8 @@ def shortest_path(
 
 def path_cost(
     G,
-    path
+    path,
+    weight='dynamic_weight'
 ):
 
     try:
@@ -203,17 +254,15 @@ def path_cost(
 
         for i in range(len(path) - 1):
 
-            total += G[
+            u = path[i]
+            v = path[i + 1]
 
-                path[i]
+            total += G[u][v].get(
+                weight,
+                G[u][v].get('weight', 0)
+            )
 
-            ][
-
-                path[i + 1]
-
-            ]['weight']
-
-        return total
+        return round(total, 2)
 
     except Exception:
 
