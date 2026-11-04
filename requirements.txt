@@ -1,6 +1,7 @@
 Flask==3.1.3
 NetworkX==3.6.1
 requests==2.33.1
+python-dotenv==1.2.1
 MarkupSafe==3.0.3
 Jinja2==3.1.6
 Werkzeug==3.1.8
