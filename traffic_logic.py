@@ -95,8 +95,27 @@ def dynamic_time(traffic_value):
     return base_time + extension
 
 # =====================================================
-# FIXED VS DYNAMIC COMPARISON
+# DELAY CALCULATION & MODE COMPARISON
 # =====================================================
+
+def calculate_segment_delay(congestion, mode="dynamic"):
+
+    """
+    Computes realistic intersection delay (in seconds) based on congestion (1-10).
+    Higher congestion increases delay in both modes, but adaptive greedy signal
+    scheduling significantly mitigates queue buildup compared to rigid fixed-time cycles.
+    """
+
+    if mode == "fixed":
+
+        # Fixed timer: static cycles cause compounding delays as queues build up
+        return round(15.0 + 4.5 * congestion, 2)
+
+    else:
+
+        # Dynamic greedy: adaptive green time clears queues faster while
+        # delay still scales naturally with vehicle volume
+        return round(8.0 + 1.8 * congestion, 2)
 
 def compare_modes(
     path,
@@ -105,11 +124,11 @@ def compare_modes(
 
     """
     Compare fixed signal system
-    vs dynamic greedy system.
+    vs dynamic greedy system along the given path.
     """
 
-    fixed_total = 0
-    dynamic_total = 0
+    fixed_total = 0.0
+    dynamic_total = 0.0
 
     for i in range(len(path) - 1):
 
@@ -135,21 +154,23 @@ def compare_modes(
                 5
             )
 
-        # ================= FIXED =================
-        # fixed signal ignores congestion
+        # ================= DELAY ACCUMULATION =================
 
-        fixed_delay = 20
+        fixed_delay = calculate_segment_delay(
+            congestion,
+            mode="fixed"
+        )
 
-        # ================= DYNAMIC =================
-        # greedy optimization reduces delay
-
-        dynamic_delay = max(
-            5,
-            20 - congestion
+        dynamic_delay = calculate_segment_delay(
+            congestion,
+            mode="dynamic"
         )
 
         fixed_total += fixed_delay
         dynamic_total += dynamic_delay
+
+    fixed_total = round(fixed_total, 2)
+    dynamic_total = round(dynamic_total, 2)
 
     # ================= EFFICIENCY =================
 
