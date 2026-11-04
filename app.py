@@ -129,24 +129,17 @@ def route():
 
             }), 400
 
-        # ================= OSRM ROUTE =================
+        # ================= OSRM MULTI-WAYPOINT ROUTE =================
 
-        source_lat, source_lng = \
-            NODE_COORDS[source]
-
-        dest_lat, dest_lng = \
-            NODE_COORDS[destination]
+        # Format all waypoints along calculated Dijkstra path as {lng},{lat}
+        waypoints_str = ";".join(
+            f"{NODE_COORDS[node][1]},{NODE_COORDS[node][0]}"
+            for node in path
+        )
 
         osrm_url = (
-
-            "http://router.project-osrm.org/route/v1/driving/"
-
-            f"{source_lng},{source_lat};"
-
-            f"{dest_lng},{dest_lat}"
-
+            f"http://router.project-osrm.org/route/v1/driving/{waypoints_str}"
             "?overview=full"
-
             "&geometries=geojson"
         )
 
