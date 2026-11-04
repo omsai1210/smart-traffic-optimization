@@ -10,13 +10,28 @@ const map = L.map('map').setView(
     14
 );
 
-L.tileLayer(
-    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    {
-        attribution:
-            '© OpenStreetMap contributors'
-    }
-).addTo(map);
+// Mapbox Navigation/Dark tiles if MAPBOX_TOKEN available, fallback to OpenStreetMap
+if (typeof MAPBOX_TOKEN !== "undefined" && MAPBOX_TOKEN && MAPBOX_TOKEN.trim().startsWith("pk.")) {
+
+    L.tileLayer(
+        `https://api.mapbox.com/styles/v1/mapbox/navigation-night-v1/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN.trim()}`,
+        {
+            attribution: '© Mapbox © OpenStreetMap',
+            tileSize: 512,
+            zoomOffset: -1,
+            maxZoom: 19
+        }
+    ).addTo(map);
+
+} else {
+
+    L.tileLayer(
+        'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        {
+            attribution: '© OpenStreetMap contributors'
+        }
+    ).addTo(map);
+}
 
 // =====================================================
 // GLOBALS
@@ -35,6 +50,8 @@ let signalMarkers = [];
 let simulationRunning = false;
 
 let roadSegments = [];
+
+let backendData = null;
 
 // NEW
 let trafficVehicles = [];
@@ -58,8 +75,49 @@ function updateStatus(message) {
 }
 
 // =====================================================
-// MODE
+// MODE & ANALYTICS
 // =====================================================
+
+function updateAnalyticsUI() {
+
+    if (backendData && backendData.comparison) {
+
+        const fixedEta = Math.round(backendData.comparison.fixed);
+        const dynEta = Math.round(backendData.comparison.dynamic);
+        const savedSec = Math.max(0, Math.round(fixedEta - dynEta));
+        const eff = backendData.comparison.efficiency;
+
+        const etaEl = document.getElementById("eta");
+        const savedEl = document.getElementById("saved");
+        const effEl = document.getElementById("efficiency");
+
+        if (etaEl) {
+            etaEl.innerText = simulationMode === "fixed" ? `${fixedEta}s` : `${dynEta}s`;
+        }
+        if (savedEl) {
+            savedEl.innerText = simulationMode === "fixed" ? "0s" : `${savedSec}s`;
+        }
+        if (effEl) {
+            effEl.innerText = simulationMode === "fixed" ? "0%" : `${eff}%`;
+        }
+
+    } else {
+
+        const etaEl = document.getElementById("eta");
+        const savedEl = document.getElementById("saved");
+        const effEl = document.getElementById("efficiency");
+
+        if (etaEl) {
+            etaEl.innerText = simulationMode === "fixed" ? "123s" : "79s";
+        }
+        if (savedEl) {
+            savedEl.innerText = simulationMode === "fixed" ? "0s" : "44s";
+        }
+        if (effEl) {
+            effEl.innerText = simulationMode === "fixed" ? "0%" : "36%";
+        }
+    }
+}
 
 function setMode(mode) {
 
@@ -85,6 +143,8 @@ function setMode(mode) {
             .getElementById("fixedBtn")
             .classList.add("active-mode");
     }
+
+    updateAnalyticsUI();
 }
 
 // =====================================================
@@ -165,6 +225,8 @@ async function loadRoute() {
         const data =
             await response.json();
 
+        backendData = data;
+
         loadedRoute =
             data.route.map(point =>
 
@@ -206,8 +268,46 @@ async function loadRoute() {
         createSignals();
 
         // =====================================================
-        // UI
+        // UI & ANALYTICS UPDATES
         // =====================================================
+
+        if (data.metrics) {
+
+            const congEl = document.getElementById("congestionIndex");
+            if (congEl) {
+                congEl.innerText = `${data.metrics.traffic_load} / 10`;
+            }
+
+            const weatherEl = document.getElementById("weatherIndex");
+            if (weatherEl) {
+                const wDesc = data.metrics.weather || "Clear";
+                const wTemp = data.metrics.weather_temp ? ` (${data.metrics.weather_temp}°C)` : "";
+                weatherEl.innerText = `${wDesc}${wTemp}`;
+            }
+        }
+
+        const trafficFeed = document.getElementById("trafficFeed");
+        if (trafficFeed) {
+            trafficFeed.innerHTML = "";
+
+            const weatherFeedItem = document.createElement("div");
+            weatherFeedItem.className = "feed-item low";
+            const weatherDesc = data.metrics?.weather || "Clear Sky";
+            const weatherImpact = data.metrics?.weather_impact > 1.0 ? ` (${data.metrics.weather_impact}x Adverse Impact)` : "";
+            weatherFeedItem.innerHTML = `🌤️ <b>Weather:</b> ${weatherDesc}${weatherImpact}<br><b>Corridor Load:</b> ${data.metrics?.traffic_load || "-"} / 10`;
+            trafficFeed.appendChild(weatherFeedItem);
+
+            if (data.path && data.path.length >= 2) {
+                for (let p = 0; p < data.path.length - 1; p++) {
+                    const item = document.createElement("div");
+                    item.className = "feed-item low";
+                    item.innerHTML = `🛣️ <b>Road:</b> ${data.path[p].replaceAll("_", " ")} ↔ ${data.path[p+1].replaceAll("_", " ")}`;
+                    trafficFeed.appendChild(item);
+                }
+            }
+        }
+
+        updateAnalyticsUI();
 
         document
             .getElementById("routeInfo")
@@ -845,35 +945,7 @@ async function startSimulation() {
     // METRICS
     // =====================================================
 
-    document
-        .getElementById("eta")
-        .innerText =
-
-        simulationMode === "fixed"
-
-        ? "123s"
-
-        : "79s";
-
-    document
-        .getElementById("saved")
-        .innerText =
-
-        simulationMode === "fixed"
-
-        ? "0s"
-
-        : "44s";
-
-    document
-        .getElementById("efficiency")
-        .innerText =
-
-        simulationMode === "fixed"
-
-        ? "0%"
-
-        : "36%";
+    updateAnalyticsUI();
 
     updateStatus(
         "Optimization completed"

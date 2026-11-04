@@ -1,13 +1,19 @@
+import os
 from flask import Flask, render_template, request, jsonify
 import requests
+from dotenv import load_dotenv
 
 from graph import create_graph, shortest_path
 from traffic_logic import (
     generate_traffic,
+    get_weather,
     dynamic_signal,
     dynamic_time,
     compare_modes
 )
+
+# Load environment variables (.env)
+load_dotenv()
 
 app = Flask(__name__)
 
@@ -55,7 +61,12 @@ NODE_COORDS = {
 @app.route('/')
 def index():
 
-    return render_template('index.html')
+    mapbox_token = os.getenv('MAPBOX_API_KEY', '')
+
+    return render_template(
+        'index.html',
+        mapbox_token=mapbox_token
+    )
 
 # ================= ROUTE API =================
 
@@ -107,9 +118,18 @@ def route():
 
             }), 400
 
-        # ================= TRAFFIC SIMULATION =================
+        # ================= LIVE WEATHER & DYNAMIC TRAFFIC =================
 
-        traffic = generate_traffic(G)
+        weather = get_weather(
+            lat=NODE_COORDS[source][0],
+            lon=NODE_COORDS[source][1]
+        )
+
+        traffic = generate_traffic(
+            G,
+            node_coords=NODE_COORDS,
+            weather=weather
+        )
 
         # ================= TRAFFIC-AWARE DIJKSTRA =================
 
@@ -231,7 +251,8 @@ def route():
 
         comparison = compare_modes(
             path,
-            traffic
+            traffic,
+            weather_modifier=weather.get("impact_multiplier", 1.0)
         )
 
         # ================= METRICS =================
@@ -258,7 +279,19 @@ def route():
                 ),
 
             "traffic_load":
-                avg_traffic
+                avg_traffic,
+
+            "weather":
+                weather.get("description", "Clear"),
+
+            "weather_condition":
+                weather.get("condition", "Clear"),
+
+            "weather_temp":
+                weather.get("temp", 28.0),
+
+            "weather_impact":
+                weather.get("impact_multiplier", 1.0)
         }
 
         # ================= RESPONSE =================
