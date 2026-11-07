@@ -2,34 +2,80 @@ import os
 import random
 import requests
 from dotenv import load_dotenv
+from cachetools import TTLCache
 
 # Load environment variables from .env
 load_dotenv()
 
 # =====================================================
-# OPENWEATHERMAP LIVE WEATHER IMPACT
+# OPENWEATHERMAP LIVE WEATHER IMPACT & ZONAL CACHING
 # =====================================================
+
+# 15-minute TTL cache (900 seconds) for up to 1000 coordinate zones
+_weather_cache = TTLCache(maxsize=1000, ttl=900)
+_owm_call_log = []
+
+def get_zone_key(lat, lon):
+    """
+    Rounds latitude and longitude to 2 decimal places to create a zonal key.
+    E.g. (18.5018, 73.8584) -> (18.50, 73.86)
+    """
+    return (round(float(lat), 2), round(float(lon), 2))
+
+def get_weather_cache():
+    return _weather_cache
+
+def reset_weather_cache():
+    _weather_cache.clear()
+
+def get_owm_call_log():
+    return list(_owm_call_log)
+
+def reset_owm_call_log():
+    global _owm_call_log
+    _owm_call_log = []
 
 def get_weather(lat=18.5088, lon=73.9250):
 
     """
-    Queries OpenWeatherMap Current Weather API for the corridor.
+    Queries OpenWeatherMap Current Weather API for the corridor zone.
+    Uses a TTLCache with a 15-minute TTL keyed by coordinate zone
+    (lat/lon rounded to 2 decimal places) to eliminate redundant external calls.
     Detects adverse weather conditions (rain, drizzle, storms, fog, snow)
     and computes a dynamic impact multiplier (1.15x - 1.25x) affecting braking/delays.
     Falls back safely to clear sky simulated conditions on any failure or missing key.
     """
 
+    zone_key = get_zone_key(lat, lon)
+
+    # Return cached zonal weather if still within the 15-minute TTL
+    if zone_key in _weather_cache:
+        cached_result = dict(_weather_cache[zone_key])
+        cached_result["cached"] = True
+        return cached_result
+
+    # Record API call attempt in the audit log
+    _owm_call_log.append({
+        "lat": lat,
+        "lon": lon,
+        "zone_key": zone_key
+    })
+
     api_key = os.getenv("OPENWEATHER_API_KEY")
 
     if not api_key:
 
-        return {
+        fallback = {
             "condition": "Clear",
             "description": "Clear Sky (Simulated)",
             "temp": 28.0,
             "impact_multiplier": 1.0,
-            "is_live": False
+            "is_live": False,
+            "zone_key": list(zone_key),
+            "cached": False
         }
+        _weather_cache[zone_key] = fallback
+        return fallback
 
     try:
 
@@ -72,31 +118,55 @@ def get_weather(lat=18.5088, lon=73.9250):
             # 1.20x modifier during adverse weather events
             impact_multiplier = 1.20 if is_adverse else 1.0
 
-            return {
+            result = {
                 "condition": condition,
                 "description": description,
                 "temp": temp,
                 "impact_multiplier": impact_multiplier,
-                "is_live": True
+                "is_live": True,
+                "zone_key": list(zone_key),
+                "cached": False
             }
+            _weather_cache[zone_key] = result
+            return result
 
     except Exception as error:
 
         print(f"[OpenWeatherMap API Warning] {error}")
 
-    return {
+    fallback = {
         "condition": "Clear",
         "description": "Clear Sky (Simulated)",
         "temp": 28.0,
         "impact_multiplier": 1.0,
-        "is_live": False
+        "is_live": False,
+        "zone_key": list(zone_key),
+        "cached": False
     }
+    _weather_cache[zone_key] = fallback
+    return fallback
 
 # =====================================================
-# TOMTOM LIVE TRAFFIC FLOW
+# TOMTOM LIVE TRAFFIC FLOW & CALL LOGGING
 # =====================================================
 
 _tomtom_disabled_until_restart = False
+_tomtom_call_log = []
+_targeted_polled_edges = []
+
+def get_tomtom_call_log():
+    return list(_tomtom_call_log)
+
+def reset_tomtom_call_log():
+    global _tomtom_call_log
+    _tomtom_call_log = []
+
+def get_targeted_polled_edges():
+    return list(_targeted_polled_edges)
+
+def reset_targeted_polled_edges():
+    global _targeted_polled_edges
+    _targeted_polled_edges = []
 
 def fetch_tomtom_flow(lat, lon, api_key):
 
@@ -107,7 +177,13 @@ def fetch_tomtom_flow(lat, lon, api_key):
     Returns None if the request fails, times out, or encounters errors.
     """
 
-    global _tomtom_disabled_until_restart
+    global _tomtom_disabled_until_restart, _tomtom_call_log
+
+    # Log every single call attempt to TomTom
+    _tomtom_call_log.append({
+        "lat": lat,
+        "lon": lon
+    })
 
     if _tomtom_disabled_until_restart:
 
@@ -158,21 +234,22 @@ def fetch_tomtom_flow(lat, lon, api_key):
     return None
 
 # =====================================================
-# TRAFFIC GENERATION (LIVE + SAFE FALLBACK)
+# TRAFFIC GENERATION (TWO-TIER TARGETED POLLING)
 # =====================================================
 
 def generate_traffic(
     G,
+    edges=None,
     node_coords=None,
     weather=None
 ):
 
     """
-    Generates real-time traffic density for each road edge.
-    Attempts live queries to TomTom Traffic Flow API at the midpoint of each road segment.
-    Falls back gracefully to simulated values if TomTom is unreachable or unauthorized.
-    Compounded with adverse weather multiplier if precipitation or fog is detected.
+    Generates real-time traffic density strictly for specified edges.
+    Guards against polling all 320,000+ edges in the city grid.
+    Queries TomTom live flow at road midpoints with simulated fallback.
     """
+    global _targeted_polled_edges
 
     traffic = {}
     tomtom_key = os.getenv("TOMTOM_API_KEY")
@@ -182,18 +259,22 @@ def generate_traffic(
         else 1.0
     )
 
-    for edge in G.edges():
+    if edges is None:
+        if hasattr(G, "edges") and len(G.edges) > 500:
+            print("[Rate-Limit Guard]: Refusing to query TomTom for all 320,000+ edges on city-wide grid. Pass explicit edges.")
+            return {}
+        edge_list = G.edges()
+    else:
+        edge_list = edges
 
-        u, v = edge
+    for edge in edge_list:
+
+        u, v = edge[0], edge[1]
+        _targeted_polled_edges.append((u, v))
         congestion = None
 
         # Query midpoint if node coordinates and TomTom API key are provided
-        if (
-            node_coords
-            and u in node_coords
-            and v in node_coords
-            and tomtom_key
-        ):
+        if node_coords and u in node_coords and v in node_coords and tomtom_key:
 
             mid_lat = (
                 node_coords[u][0] + node_coords[v][0]
@@ -208,6 +289,13 @@ def generate_traffic(
                 mid_lon,
                 tomtom_key
             )
+        elif hasattr(G, "nodes") and u in G.nodes and v in G.nodes and tomtom_key:
+            u_data = G.nodes[u]
+            v_data = G.nodes[v]
+            if "y" in u_data and "x" in u_data and "y" in v_data and "x" in v_data:
+                mid_lat = (u_data["y"] + v_data["y"]) / 2.0
+                mid_lon = (u_data["x"] + v_data["x"]) / 2.0
+                congestion = fetch_tomtom_flow(mid_lat, mid_lon, tomtom_key)
 
         # Fallback to simulated congestion
         if congestion is None:
@@ -225,9 +313,87 @@ def generate_traffic(
                 )
             )
 
-        traffic[edge] = congestion
+        traffic[(u, v)] = congestion
 
     return traffic
+
+# =====================================================
+# DYNAMIC PENALTIES & TWO-TIER TARGETED ROUTING
+# =====================================================
+
+def apply_targeted_penalties(G, candidate_edges, traffic):
+    """
+    Applies quadratic congestion penalty to targeted candidate edges:
+    dynamic_cost = base_weight * (1 + 0.15 * congestion^2)
+    """
+    for u, v in candidate_edges:
+        congestion = traffic.get((u, v), traffic.get((v, u), 1))
+        edge_dict = G.get_edge_data(u, v)
+        if edge_dict:
+            for k, data in edge_dict.items():
+                base_cost = data.get("base_weight", data.get("travel_time", data.get("length", 1.0)))
+                dyn_cost = round(base_cost * (1 + 0.15 * (congestion ** 2)), 2)
+                data["dynamic_weight"] = dyn_cost
+                data["congestion"] = congestion
+
+def two_tier_traffic_routing(
+    G,
+    src_node,
+    dst_node,
+    weather=None,
+    congestion_reroute_threshold=6
+):
+    """
+    Two-Tier Targeted TomTom Routing:
+    Tier 1: Compute candidate path via A* using baseline travel_time.
+    Tier 2: Poll TomTom live flow ONLY for the candidate path edges (~50-100 edges).
+    Penalize candidate edges and rerun A* on dynamic weights if alternate routing is beneficial.
+    """
+    from graph import shortest_path
+
+    # Tier 1: Baseline candidate route via A* (travel_time)
+    candidate_path = shortest_path(G, src_node, dst_node, weight="travel_time")
+    if not candidate_path:
+        return None, None, {}, False
+
+    candidate_edges = [
+        (candidate_path[i], candidate_path[i + 1])
+        for i in range(len(candidate_path) - 1)
+    ]
+
+    # Tier 2: Targeted polling ONLY for candidate edges
+    traffic = generate_traffic(G, edges=candidate_edges, weather=weather)
+
+    # Apply dynamic penalties to the candidate segments in the graph
+    apply_targeted_penalties(G, candidate_edges, traffic)
+
+    # Check if alternate routing is needed (e.g. heavy congestion detected)
+    has_heavy_congestion = any(
+        traffic.get(e, 1) >= congestion_reroute_threshold
+        for e in candidate_edges
+    )
+
+    final_path = candidate_path
+    rerouted = False
+
+    if has_heavy_congestion:
+        alternate_path = shortest_path(G, src_node, dst_node, weight="dynamic_weight")
+        if alternate_path and alternate_path != candidate_path:
+            final_path = alternate_path
+            rerouted = True
+            # Fetch traffic for any new edges introduced in the alternate route
+            alt_edges = [
+                (final_path[i], final_path[i + 1])
+                for i in range(len(final_path) - 1)
+                if (final_path[i], final_path[i + 1]) not in traffic
+            ]
+            if alt_edges:
+                alt_traffic = generate_traffic(G, edges=alt_edges, weather=weather)
+                traffic.update(alt_traffic)
+
+    return final_path, candidate_path, traffic, rerouted
+
+
 
 # =====================================================
 # GREEDY DYNAMIC SIGNAL SELECTION

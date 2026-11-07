@@ -19,3 +19,10 @@ __MACOSX/
 .vscode/
 .idea/
 
+# OSMnx Cache
+cache/
+
+# Large raw GraphML files (tracked as compressed .graphml.gz < 25MB for GitHub)
+data/*.graphml
+!data/*.graphml.gz
+
